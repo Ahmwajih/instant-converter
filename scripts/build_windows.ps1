@@ -4,6 +4,9 @@ Write-Host "==> Installing dependencies..."
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
+Write-Host "==> Generating application icons..."
+python scripts/generate_icons.py
+
 Write-Host "==> Running automated test suite..."
 pytest
 
@@ -12,6 +15,8 @@ pyinstaller --noconfirm --clean `
     --name "InstantConverter" `
     --windowed `
     --onedir `
+    --icon "assets\icon.ico" `
+    --add-data "assets;assets" `
     app.py
 
 Write-Host "==> Checking for Inno Setup Compiler (ISCC)..."
