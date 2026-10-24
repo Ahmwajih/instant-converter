@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 APP_NAME="instant-converter"
 ARCH="amd64"
 
@@ -20,6 +20,7 @@ pyinstaller --noconfirm --clean \
     --name "${APP_NAME}" \
     --windowed \
     --onedir \
+    --icon "assets/icon.png" \
     --add-data "assets:assets" \
     app.py
 
@@ -55,17 +56,19 @@ CONTROL
 
 cat <<DESKTOP > "${DEB_ROOT}/usr/share/applications/${APP_NAME}.desktop"
 [Desktop Entry]
+Version=1.0
 Name=Instant Converter
 Comment=Offline radial menu file converter
 Exec=/usr/bin/${APP_NAME} %f
-Icon=${APP_NAME}
+Icon=/usr/share/pixmaps/${APP_NAME}.png
 Terminal=false
 Type=Application
 Categories=Utility;Office;Graphics;AudioVideo;
-StartupNotify=false
+StartupNotify=true
 StartupWMClass=instant-converter
 DESKTOP
 
 chmod 755 "${DEB_ROOT}/DEBIAN/control"
+chmod 644 "${DEB_ROOT}/usr/share/applications/${APP_NAME}.desktop"
 dpkg-deb --build "${DEB_ROOT}" "dist/${APP_NAME}_${VERSION}_${ARCH}.deb"
 echo "==> Debian package created at dist/${APP_NAME}_${VERSION}_${ARCH}.deb"

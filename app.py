@@ -21,7 +21,8 @@ def main() -> int:
     app.setOrganizationName("InstantConverter")
     app.setDesktopFileName("instant-converter")
     app.setWindowIcon(create_app_icon())
-    app.setQuitOnLastWindowClosed(True)
+    # Prevent QFileDialog closing from terminating the application
+    app.setQuitOnLastWindowClosed(False)
 
     initial_file = None
     if len(sys.argv) > 1:
