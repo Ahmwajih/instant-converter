@@ -32,7 +32,7 @@ def _text_to_html(text: str, title: str = "Document") -> str:
     return (
         "<!DOCTYPE html>\n<html>\n<head>\n<meta charset='utf-8'>\n"
         f"<title>{html.escape(title)}</title>\n"
-        "<style>body{font-family:sans-serif;line-height:1.5;margin:40px;color:#18181b;}</style>\n"
+        "<style>body{font-family:Calibri,Carlito,sans-serif;line-height:1.35;margin:36px;color:#18181b;}</style>\n"
         f"</head>\n<body>\n{body}\n</body>\n</html>\n"
     )
 
@@ -53,12 +53,12 @@ def extract_plain_text(source_path: Path) -> str:
 
 
 def _render_vector_pdf(text: str, output_path: Path) -> Path:
-    """Generates a true vector, searchable PDF with selectable text via PyMuPDF."""
+    """Rendu PDF vectoriel compact préservant les lettres d'une page sur une seule page."""
     doc = pymupdf.open()
-    page_width, page_height = 595.0, 842.0  # A4 in points
-    margin = 50.0
-    fontsize = 11.0
-    line_height = 16.0
+    page_width, page_height = 595.0, 842.0  # A4
+    margin = 45.0
+    fontsize = 10.5
+    line_height = 14.2
     max_lines_per_page = int((page_height - 2 * margin) // line_height)
 
     wrapped_lines: list[str] = []
@@ -66,7 +66,7 @@ def _render_vector_pdf(text: str, output_path: Path) -> Path:
         if not raw_line.strip():
             wrapped_lines.append("")
         else:
-            wrapped_lines.extend(textwrap.wrap(raw_line, width=82))
+            wrapped_lines.extend(textwrap.wrap(raw_line, width=88))
 
     if not wrapped_lines:
         wrapped_lines = [""]
@@ -91,7 +91,7 @@ def _render_vector_pdf(text: str, output_path: Path) -> Path:
 
 
 def _find_libreoffice() -> str | None:
-    for binary in ("soffice", "libreoffice"):
+    for binary in ("libreoffice", "soffice"):
         found = shutil.which(binary)
         if found:
             return found
@@ -101,6 +101,30 @@ def _find_libreoffice() -> str | None:
 def convert_document(source_path: Path, output_path: Path, target_format: str) -> Path:
     src_ext = source_path.suffix.lower().lstrip(".")
     tgt_ext = target_format.lower().lstrip(".")
+
+    if tgt_ext == "pdf" and src_ext in {"docx", "html", "txt", "md"}:
+        soffice = _find_libreoffice()
+        if soffice:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                profile_uri = Path(tmpdir).as_uri() + "/lo_profile"
+                cmd = [
+                    soffice,
+                    f"-env:UserInstallation={profile_uri}",
+                    "--headless",
+                    "--nologo",
+                    "--nofirststartwizard",
+                    "--convert-to",
+                    "pdf:writer_pdf_Export",
+                    "--outdir",
+                    tmpdir,
+                    str(source_path),
+                ]
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+                generated = Path(tmpdir) / f"{source_path.stem}.pdf"
+                if res.returncode == 0 and generated.exists():
+                    shutil.move(str(generated), str(output_path))
+                    return output_path
+
     text = extract_plain_text(source_path)
 
     if tgt_ext in {"txt", "md"}:
@@ -128,23 +152,6 @@ def convert_document(source_path: Path, output_path: Path, target_format: str) -
         return output_path
 
     if tgt_ext == "pdf":
-        soffice = _find_libreoffice()
-        if soffice and src_ext in {"docx", "html"}:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                cmd = [
-                    soffice,
-                    "--headless",
-                    "--convert-to",
-                    "pdf",
-                    "--outdir",
-                    tmpdir,
-                    str(source_path),
-                ]
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                generated = Path(tmpdir) / f"{source_path.stem}.pdf"
-                if res.returncode == 0 and generated.exists():
-                    shutil.move(str(generated), str(output_path))
-                    return output_path
         return _render_vector_pdf(text, output_path)
 
     raise ValueError(f"Unsupported document target format: {target_format}")

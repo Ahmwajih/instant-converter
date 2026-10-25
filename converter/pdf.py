@@ -1,6 +1,7 @@
 import csv
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Sequence
 import openpyxl
@@ -11,26 +12,108 @@ sys.modules.setdefault("fitz", pymupdf)
 from pdf2docx import Converter
 from pypdf import PdfWriter
 from docx import Document
+from docx.oxml.ns import qn
 from converter.ocr import ocr_pdf_to_text
+
+_BROWSER_HEADER_FOOTER_RE = re.compile(
+    r"^(\d+\s*(von|of|/)\s*\d+|\d{1,2}[./]\d{1,2}[./]\d{2,4},?\s*\d{1,2}:\d{2})$",
+    re.IGNORECASE,
+)
+
+
+def _collapse_doubled_string(text: str) -> str:
+    """Détecte et corrige une chaîne doublée exactement (ex: 'ABCABC' ou 'Phrase.Phrase.')."""
+    s = text.strip()
+    n = len(s)
+    if n >= 6 and n % 2 == 0:
+        half = n // 2
+        if s[:half] == s[half:]:
+            return s[:half]
+    # Cas où un espace sépare le doublon
+    if n >= 7 and n % 2 == 1 and s[n // 2] == " ":
+        half = n // 2
+        if s[:half] == s[half + 1 :]:
+            return s[:half]
+    return text
+
+
+def _postprocess_docx(docx_path: Path) -> None:
+    """Nettoie les doublons de calques PDF et les boîtes noires dans le fichier Word généré."""
+    doc = Document(str(docx_path))
+
+    def clean_paragraph(p) -> None:
+        # 1. Supprimer les runs consécutifs strictement identiques (ex: badges doublés)
+        prev_text = None
+        for run in p.runs:
+            t = run.text.strip()
+            if not t:
+                continue
+            cleaned_t = _collapse_doubled_string(run.text)
+            if cleaned_t != run.text:
+                run.text = cleaned_t
+                t = cleaned_t.strip()
+            if prev_text is not None and t == prev_text:
+                run.text = ""
+            else:
+                # Ajouter un espace si deux badges consécutifs sont collés
+                if prev_text is not None and not run.text.startswith((" ", ".", ",", ";", ":", "-", "/")):
+                    run.text = "  " + run.text
+                prev_text = t
+
+        # 2. Si le paragraphe complet est doublé (ex: Tools & Technologien...Tools & Technologien...)
+        full = p.text.strip()
+        collapsed = _collapse_doubled_string(full)
+        if collapsed != full and p.runs:
+            p.runs[0].text = collapsed
+            for r in p.runs[1:]:
+                r.text = ""
+
+        # 3. Supprimer les en-têtes/pieds de page d'impression navigateur (ex: "1 von 6", "29/04/2026, 08:19")
+        if _BROWSER_HEADER_FOOTER_RE.match(p.text.strip()):
+            for r in p.runs:
+                r.text = ""
+
+    for para in doc.paragraphs:
+        clean_paragraph(para)
+
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    clean_paragraph(para)
+
+    # 4. Supprimer les petites images/boîtes noires générées à partir des cadres de badges
+    for shape in list(doc.inline_shapes):
+        try:
+            # Si l'image est un petit badge (< 45mm de large et < 18mm de haut)
+            if shape.width < 1600000 and shape.height < 650000:
+                inline = shape._inline
+                inline.getparent().remove(inline)
+        except Exception:
+            pass
+
+    doc.save(str(docx_path))
 
 
 def extract_text_from_pdf(source_path: Path) -> str:
     pages_text = []
     with pymupdf.open(str(source_path)) as doc:
         for page in doc:
-            extracted = page.get_text("text", sort=True) or ""
-            if extracted.strip():
-                pages_text.append(extracted.strip())
+            lines = []
+            for raw_line in (page.get_text("text", sort=True) or "").splitlines():
+                stripped = raw_line.strip()
+                if stripped and not _BROWSER_HEADER_FOOTER_RE.match(stripped):
+                    lines.append(_collapse_doubled_string(stripped))
+            if lines:
+                pages_text.append("\n".join(lines))
 
     combined = "\n\n".join(pages_text)
     if not combined.strip():
-        # Scanned PDF detected -> Run automatic offline OCR
         combined = ocr_pdf_to_text(source_path)
     return combined
 
 
 def _extract_tables_from_pdf(source_path: Path) -> list[list[list[str]]]:
-    """Extracts structured tables from PDF pages using PyMuPDF's table finder with line fallback."""
     extracted_tables: list[list[list[str]]] = []
     with pymupdf.open(str(source_path)) as doc:
         for page in doc:
@@ -38,7 +121,7 @@ def _extract_tables_from_pdf(source_path: Path) -> list[list[list[str]]]:
                 finder = page.find_tables()
                 for table in finder.tables:
                     rows = [
-                        ["" if cell is None else str(cell).strip() for cell in row]
+                        ["" if cell is None else _collapse_doubled_string(str(cell).strip()) for cell in row]
                         for row in table.extract()
                     ]
                     if rows:
@@ -46,14 +129,13 @@ def _extract_tables_from_pdf(source_path: Path) -> list[list[list[str]]]:
             except Exception:
                 pass
 
-        # Fallback if PDF tables have no borders/gridlines
         if not extracted_tables:
             fallback_rows: list[list[str]] = []
             for page in doc:
                 text = page.get_text("text", sort=True) or ""
                 for line in text.splitlines():
                     stripped = line.strip()
-                    if stripped:
+                    if stripped and not _BROWSER_HEADER_FOOTER_RE.match(stripped):
                         cols = [c.strip() for c in re.split(r"\s{2,}|\t", stripped) if c.strip()]
                         fallback_rows.append(cols if cols else [stripped])
             if fallback_rows:
@@ -122,7 +204,7 @@ def pdf_to_html(source_path: Path, output_path: Path) -> Path:
 
 
 def pdf_to_docx(source_path: Path, output_path: Path) -> Path:
-    """Converts PDF to DOCX preserving layout, with automatic OCR fallback for scanned PDFs."""
+    """Convertit un PDF en DOCX avec nettoyage des calques doublés et des formes parasites."""
     has_text_layer = False
     with pymupdf.open(str(source_path)) as check_doc:
         for page in check_doc:
@@ -138,9 +220,9 @@ def pdf_to_docx(source_path: Path, output_path: Path) -> Path:
             cv.close()
 
         if output_path.exists() and output_path.stat().st_size > 0:
+            _postprocess_docx(output_path)
             return output_path
 
-    # Scanned PDF or fallback route -> OCR + python-docx
     text = extract_text_from_pdf(source_path)
     doc = Document()
     for line in text.splitlines():
