@@ -1,5 +1,5 @@
 #define MyAppName "Instant Converter"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Instant Converter Contributors"
 #define MyAppExeName "InstantConverter.exe"
 

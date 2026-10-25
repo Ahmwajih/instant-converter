@@ -36,4 +36,4 @@ def test_unsupported_target_raises(tmp_path: Path) -> None:
     src = tmp_path / "test.png"
     Image.new("RGB", (32, 32)).save(src)
     with pytest.raises(ValueError):
-        convert_file(src, "DOCX")
+        convert_file(src, "MP3")

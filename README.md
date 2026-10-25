@@ -1,21 +1,22 @@
 # Instant Converter
 
+[![Release: v1.1.0](https://img.shields.io/badge/Release-v1.1.0-2563eb.svg)](https://github.com/Ahmwajih/instant-converter/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](https://www.python.org/)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11%20%7C%20Ubuntu%20Linux-success.svg)](#prerequisites)
 
-**Instant Converter** is an open-source, 100% offline desktop file converter built with **Python** and **PySide6**. It features an adaptive floating radial wheel that wraps dynamically around your desktop orb to convert **Images**, **Documents**, **Markdown/HTML**, **Audio**, and **Video** completely locally in seconds.
+**Instant Converter** is an open-source, 100% offline desktop file converter built with **Python** and **PySide6**. It features an adaptive floating radial wheel that expands around your desktop orb to convert **Images (including HEIC/AVIF/SVG)**, **PDFs (to Editable DOCX & Excel/CSV Tables)**, **Scanned Documents (Offline OCR)**, **E-Books (EPUB/XPS/CBZ)**, **Developer Data (JSON/YAML/TOML/XML/XLSX)**, **Audio**, and **Video** locally in seconds.
 
 ---
 
-## Key Features
+## What Makes Instant Converter Different?
 
-- **Integrated Radial Wheel**: Slices automatically expand around the desktop orb showing only valid target formats for the loaded file.
-- **Single-Click or Drag & Drop**: Click the center orb to open your native file dialog, or drag and drop any supported file directly onto it.
-- **Interactive Status Pill**: Visual status bar indicates progress (`Converting...`), errors, and provides a direct shortcut (`✓ Saved (Click to open)`) to reveal the file in your system file manager.
-- **100% Offline & Private**: Zero cloud processing. No file size limits or privacy leaks.
-- **Cross-Platform & Wayland-Ready**: Built for Windows 10/11 and Ubuntu (X11 & Wayland compatible via automatic XCB fallbacks).
-- **Graceful Engine Fallbacks**: Seamlessly uses LibreOffice Headless and FFmpeg when installed, while providing pure-Python fallback renderers for documents.
+- **Offline PDF Table Extraction (`PDF` → `XLSX` / `CSV`)**: Extracts structured financial and report tables directly into multi-sheet Excel workbooks or CSV files without uploading sensitive documents to the cloud.
+- **Built-In Offline OCR (`IMG` / Scanned `PDF` → `DOCX` / `TXT`)**: Powered by local ONNX Runtime (`RapidOCR`) + Tesseract fallback—turn screenshots, receipt photos, and scanned PDFs into editable Word or text files offline.
+- **High-Fidelity Layout Reconstruction (`PDF` → `DOCX`)**: Preserves tables, embedded images, multi-column layouts, and typography via `pdf2docx` and `PyMuPDF`.
+- **Apple & Vector Formats (`HEIC`, `AVIF`, `SVG`)**: Native conversion for iPhone `.heic` photos, `.avif` images, and 300 DPI / vector `.svg` graphics.
+- **Zero-Calibre E-Book Engine (`EPUB`, `FB2`, `XPS`, `CBZ`)**: Convert e-books and comic archives directly to PDF, DOCX, TXT, or HTML.
+- **Developer & Admin Data Pipeline (`JSON` ↔ `YAML` ↔ `TOML` ↔ `XML` ↔ `CSV` ↔ `XLSX`)**: Transform configuration files and API payloads into formatted Excel sheets or vice versa in one click.
 
 ---
 
@@ -23,9 +24,11 @@
 
 | Category | Input Formats | Available Output Formats | Processing Engine |
 | :--- | :--- | :--- | :--- |
-| **Images** | `PNG`, `JPG`, `JPEG`, `WEBP`, `BMP`, `GIF`, `TIFF`, `ICO` | `PNG`, `JPG`, `WEBP`, `BMP`, `ICO`, `PDF`, `MP4` *(GIF)* | Pillow |
-| **Documents** | `DOCX`, `TXT`, `MD`, `HTML` | `PDF`, `DOCX`, `TXT`, `MD`, `HTML` | python-docx, Pillow, LibreOffice *(optional)* |
-| **PDF Operations** | `PDF` | `DOCX`, `TXT`, `MD`, `HTML`, `PNG` | pypdf, poppler-utils / Pillow |
+| **Images & Next-Gen** | `PNG`, `JPG`, `WEBP`, `BMP`, `GIF`, `TIFF`, `ICO`, `HEIC`, `HEIF`, `AVIF`, `SVG` | `PNG`, `JPG`, `WEBP`, `PDF`, `ICO`, `TXT` *(OCR)*, `DOCX` *(OCR)*, `MP4` *(GIF)* | Pillow, pillow-heif, PyMuPDF, RapidOCR |
+| **PDF Operations** | `PDF` *(Digital & Scanned)* | `DOCX`, `XLSX`, `CSV`, `TXT`, `HTML`, `PNG` *(300 DPI)* | pdf2docx, PyMuPDF, openpyxl, RapidOCR |
+| **Documents** | `DOCX`, `TXT`, `MD`, `HTML` | `PDF`, `DOCX`, `TXT`, `MD`, `HTML` | PyMuPDF Vector Engine, python-docx, LibreOffice |
+| **E-Books & Archives** | `EPUB`, `FB2`, `XPS`, `CBZ` | `PDF`, `DOCX`, `TXT`, `HTML`, `PNG` | PyMuPDF Native Layout Engine |
+| **Data & Spreadsheets** | `JSON`, `YAML`, `YML`, `TOML`, `XML`, `CSV`, `XLSX` | `XLSX`, `CSV`, `JSON`, `YAML`, `TOML`, `XML` | openpyxl, PyYAML, tomllib/tomli-w, xml |
 | **Video** | `MP4`, `MKV`, `WEBM`, `AVI`, `MOV` | `MP4`, `WEBM`, `MKV`, `GIF`, `MP3`, `WAV` | FFmpeg |
 | **Audio** | `MP3`, `WAV`, `FLAC`, `OGG`, `M4A` | `MP3`, `WAV`, `FLAC`, `OGG` | FFmpeg |
 
@@ -39,12 +42,12 @@ Install core Qt/XCB runtime packages and optional media/document tools:
 
     sudo apt update
     sudo apt install -y python3-venv python3-pip libxcb-cursor0 libegl1 libgl1
-    sudo apt install -y ffmpeg poppler-utils libreoffice-writer
+    sudo apt install -y ffmpeg libreoffice-writer tesseract-ocr
 
 ### Windows 10 / 11
 
-1. Install **Python 3.10+** from [python.org](https://www.python.org/downloads/) (check **"Add Python to PATH"** during setup).
-2. Install **FFmpeg** and **LibreOffice** *(optional, for media and high-fidelity DOCX-to-PDF conversion)* via PowerShell:
+1. Install **Python 3.11+** from [python.org](https://www.python.org/downloads/) (check **"Add Python to PATH"** during setup).
+2. Install **FFmpeg** and **LibreOffice** *(optional, for media and DOCX-to-PDF conversion)* via PowerShell:
 
     winget install Gyan.FFmpeg
     winget install TheDocumentFoundation.LibreOffice
@@ -84,10 +87,10 @@ Install core Qt/XCB runtime packages and optional media/document tools:
 Pass a file path directly to open the radial selector immediately:
 
     # Ubuntu / Linux
-    python app.py ~/Documents/sample.docx
+    python app.py ~/Documents/invoice.pdf
 
     # Windows
-    python app.py "C:\path\to\sample.docx"
+    python app.py "C:\path\to\invoice.pdf"
 
 ---
 
@@ -116,14 +119,14 @@ Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php) with `ISCC.exe` in yo
 
 The compiled installer will be created at `dist\InstantConverter-Setup.exe`.
 
-### Ubuntu Linux (`instant-converter_1.0.0_amd64.deb`)
+### Ubuntu Linux (`instant-converter_1.1.0_amd64.deb`)
 
 Build and install the Debian package:
 
     sudo apt install -y dpkg-dev
     chmod +x scripts/build_linux.sh
     ./scripts/build_linux.sh
-    sudo apt install ./dist/instant-converter_1.0.0_amd64.deb
+    sudo apt install ./dist/instant-converter_1.1.0_amd64.deb
 
 ---
 

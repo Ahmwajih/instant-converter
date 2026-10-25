@@ -1,16 +1,27 @@
 from pathlib import Path
 from converter.detection import (
+    DATA_FORMATS,
     DOCUMENT_FORMATS,
+    EBOOK_FORMATS,
     IMAGE_FORMATS,
     MEDIA_FORMATS,
     get_available_targets,
     get_extension,
     resolve_output_path,
 )
-from converter.images import convert_image
-from converter.pdf import pdf_to_docx, pdf_to_html, pdf_to_png, pdf_to_txt
+from converter.data_formats import convert_data
 from converter.documents import convert_document
+from converter.ebooks import convert_ebook
+from converter.images import convert_image
 from converter.media import convert_media
+from converter.pdf import (
+    pdf_to_csv,
+    pdf_to_docx,
+    pdf_to_html,
+    pdf_to_png,
+    pdf_to_txt,
+    pdf_to_xlsx,
+)
 
 
 def convert_file(
@@ -33,26 +44,38 @@ def convert_file(
     if src_ext == "gif" and tgt_ext == "mp4":
         return convert_media(source_path, final_output, tgt_ext)
 
-    # 2. Images
+    # 2. Images (including HEIC, AVIF, SVG, and OCR -> TXT/DOCX)
     if src_ext in IMAGE_FORMATS:
         return convert_image(source_path, final_output, tgt_ext)
 
-    # 3. PDF
+    # 3. PDF (including Excel/CSV Table Extraction & Auto-OCR)
     if src_ext == "pdf":
         if tgt_ext in {"txt", "md"}:
             return pdf_to_txt(source_path, final_output)
         if tgt_ext == "docx":
             return pdf_to_docx(source_path, final_output)
+        if tgt_ext == "xlsx":
+            return pdf_to_xlsx(source_path, final_output)
+        if tgt_ext == "csv":
+            return pdf_to_csv(source_path, final_output)
         if tgt_ext == "html":
             return pdf_to_html(source_path, final_output)
         if tgt_ext == "png":
             return pdf_to_png(source_path, final_output)
 
-    # 4. Documents (DOCX, TXT, MD, HTML)
+    # 4. E-Books & Comic Archives (EPUB, FB2, XPS, CBZ)
+    if src_ext in EBOOK_FORMATS:
+        return convert_ebook(source_path, final_output, tgt_ext)
+
+    # 5. Developer Data & Spreadsheets (JSON, YAML, TOML, XML, CSV, XLSX)
+    if src_ext in DATA_FORMATS:
+        return convert_data(source_path, final_output, tgt_ext)
+
+    # 6. Documents (DOCX, TXT, MD, HTML)
     if src_ext in DOCUMENT_FORMATS:
         return convert_document(source_path, final_output, tgt_ext)
 
-    # 5. Audio & Video (FFmpeg)
+    # 7. Audio & Video (FFmpeg)
     if src_ext in MEDIA_FORMATS:
         return convert_media(source_path, final_output, tgt_ext)
 

@@ -1,21 +1,102 @@
-import shutil
-import subprocess
-import tempfile
+import csv
+import re
+import sys
 from pathlib import Path
 from typing import Sequence
-from pypdf import PdfReader, PdfWriter
+import openpyxl
+from openpyxl.styles import Font
+import pymupdf
+
+sys.modules.setdefault("fitz", pymupdf)
+from pdf2docx import Converter
+from pypdf import PdfWriter
 from docx import Document
-from PIL import Image, ImageDraw, ImageFont
-from converter.documents import _text_to_html
+from converter.ocr import ocr_pdf_to_text
 
 
 def extract_text_from_pdf(source_path: Path) -> str:
-    reader = PdfReader(str(source_path))
     pages_text = []
-    for page in reader.pages:
-        extracted = page.extract_text() or ""
-        pages_text.append(extracted.strip())
-    return "\n\n".join(filter(None, pages_text))
+    with pymupdf.open(str(source_path)) as doc:
+        for page in doc:
+            extracted = page.get_text("text", sort=True) or ""
+            if extracted.strip():
+                pages_text.append(extracted.strip())
+
+    combined = "\n\n".join(pages_text)
+    if not combined.strip():
+        # Scanned PDF detected -> Run automatic offline OCR
+        combined = ocr_pdf_to_text(source_path)
+    return combined
+
+
+def _extract_tables_from_pdf(source_path: Path) -> list[list[list[str]]]:
+    """Extracts structured tables from PDF pages using PyMuPDF's table finder with line fallback."""
+    extracted_tables: list[list[list[str]]] = []
+    with pymupdf.open(str(source_path)) as doc:
+        for page in doc:
+            try:
+                finder = page.find_tables()
+                for table in finder.tables:
+                    rows = [
+                        ["" if cell is None else str(cell).strip() for cell in row]
+                        for row in table.extract()
+                    ]
+                    if rows:
+                        extracted_tables.append(rows)
+            except Exception:
+                pass
+
+        # Fallback if PDF tables have no borders/gridlines
+        if not extracted_tables:
+            fallback_rows: list[list[str]] = []
+            for page in doc:
+                text = page.get_text("text", sort=True) or ""
+                for line in text.splitlines():
+                    stripped = line.strip()
+                    if stripped:
+                        cols = [c.strip() for c in re.split(r"\s{2,}|\t", stripped) if c.strip()]
+                        fallback_rows.append(cols if cols else [stripped])
+            if fallback_rows:
+                extracted_tables.append(fallback_rows)
+
+    return extracted_tables
+
+
+def pdf_to_xlsx(source_path: Path, output_path: Path) -> Path:
+    tables = _extract_tables_from_pdf(source_path)
+    wb = openpyxl.Workbook()
+    default_sheet = wb.active
+
+    if not tables:
+        default_sheet.title = "Extracted"
+        text = extract_text_from_pdf(source_path)
+        for line in text.splitlines():
+            default_sheet.append([line])
+    else:
+        for idx, table in enumerate(tables):
+            ws = default_sheet if idx == 0 else wb.create_sheet(title=f"Table_{idx + 1}")
+            if idx == 0:
+                ws.title = "Table_1"
+            for r_idx, row in enumerate(table):
+                ws.append(row)
+                if r_idx == 0:
+                    for cell in ws[1]:
+                        cell.font = Font(bold=True)
+
+    wb.save(output_path)
+    return output_path
+
+
+def pdf_to_csv(source_path: Path, output_path: Path) -> Path:
+    tables = _extract_tables_from_pdf(source_path)
+    with output_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        for idx, table in enumerate(tables):
+            for row in table:
+                writer.writerow(row)
+            if idx < len(tables) - 1:
+                writer.writerow([])
+    return output_path
 
 
 def pdf_to_txt(source_path: Path, output_path: Path) -> Path:
@@ -25,48 +106,56 @@ def pdf_to_txt(source_path: Path, output_path: Path) -> Path:
 
 
 def pdf_to_html(source_path: Path, output_path: Path) -> Path:
-    text = extract_text_from_pdf(source_path)
-    output_path.write_text(_text_to_html(text, source_path.stem), encoding="utf-8")
+    html_pages = [
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        f"<title>{source_path.stem}</title>"
+        "<style>body{background:#f4f4f5;margin:20px;font-family:sans-serif;}"
+        ".page{background:#fff;margin:16px auto;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,0.1);}</style>"
+        "</head><body>"
+    ]
+    with pymupdf.open(str(source_path)) as doc:
+        for page in doc:
+            html_pages.append(f"<div class='page'>{page.get_text('html')}</div>")
+    html_pages.append("</body></html>")
+    output_path.write_text("\n".join(html_pages), encoding="utf-8")
     return output_path
 
 
 def pdf_to_docx(source_path: Path, output_path: Path) -> Path:
-    reader = PdfReader(str(source_path))
+    """Converts PDF to DOCX preserving layout, with automatic OCR fallback for scanned PDFs."""
+    has_text_layer = False
+    with pymupdf.open(str(source_path)) as check_doc:
+        for page in check_doc:
+            if (page.get_text("text") or "").strip():
+                has_text_layer = True
+                break
+
+    if has_text_layer:
+        cv = Converter(str(source_path))
+        try:
+            cv.convert(str(output_path), multi_processing=False)
+        finally:
+            cv.close()
+
+        if output_path.exists() and output_path.stat().st_size > 0:
+            return output_path
+
+    # Scanned PDF or fallback route -> OCR + python-docx
+    text = extract_text_from_pdf(source_path)
     doc = Document()
-    for idx, page in enumerate(reader.pages):
-        text = (page.extract_text() or "").strip()
-        if text:
-            for paragraph in text.splitlines():
-                if paragraph.strip():
-                    doc.add_paragraph(paragraph)
-        if idx < len(reader.pages) - 1:
-            doc.add_page_break()
+    for line in text.splitlines():
+        if line.strip():
+            doc.add_paragraph(line)
     doc.save(str(output_path))
     return output_path
 
 
 def pdf_to_png(source_path: Path, output_path: Path) -> Path:
-    pdftoppm = shutil.which("pdftoppm")
-    if pdftoppm:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            prefix = str(Path(tmpdir) / "page")
-            cmd = [pdftoppm, "-png", "-singlefile", str(source_path), prefix]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            rendered = Path(f"{prefix}.png")
-            if res.returncode == 0 and rendered.exists():
-                shutil.move(str(rendered), str(output_path))
-                return output_path
-
-    # Pure-Python fallback if poppler-utils is not installed
-    text = extract_text_from_pdf(source_path) or "PDF Preview"
-    img = Image.new("RGB", (1240, 1754), color=(255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    font = ImageFont.load_default()
-    y = 80
-    for line in text.splitlines()[:48]:
-        draw.text((80, y), line[:90], fill=(20, 20, 20), font=font)
-        y += 32
-    img.save(output_path, format="PNG")
+    with pymupdf.open(str(source_path)) as doc:
+        if len(doc) == 0:
+            raise ValueError("Cannot render an empty PDF.")
+        pix = doc[0].get_pixmap(dpi=300, alpha=False)
+        pix.save(str(output_path))
     return output_path
 
 

@@ -1,28 +1,51 @@
 from pathlib import Path
 from typing import List
 
-IMAGE_FORMATS = {"png", "jpg", "jpeg", "webp", "bmp", "ico", "tiff", "gif"}
+IMAGE_FORMATS = {
+    "png", "jpg", "jpeg", "webp", "bmp", "ico", "tiff", "gif",
+    "heic", "heif", "avif", "svg",
+}
 DOCUMENT_FORMATS = {"pdf", "docx", "txt", "md", "html"}
+EBOOK_FORMATS = {"epub", "fb2", "xps", "cbz"}
+DATA_FORMATS = {"json", "yaml", "yml", "toml", "xml", "csv", "xlsx"}
 VIDEO_FORMATS = {"mp4", "mkv", "webm", "avi", "mov"}
 AUDIO_FORMATS = {"mp3", "wav", "flac", "ogg", "m4a"}
 MEDIA_FORMATS = VIDEO_FORMATS | AUDIO_FORMATS
 
 SUPPORTED_TARGETS = {
-    # Images
-    "png": ["JPG", "WEBP", "BMP", "ICO", "PDF"],
-    "jpg": ["PNG", "WEBP", "BMP", "ICO", "PDF"],
-    "jpeg": ["PNG", "WEBP", "BMP", "ICO", "PDF"],
-    "webp": ["PNG", "JPG", "BMP", "ICO", "PDF"],
-    "bmp": ["PNG", "JPG", "WEBP", "ICO", "PDF"],
+    # Standard & Next-Gen Images (including OCR to TXT/DOCX)
+    "png": ["JPG", "WEBP", "PDF", "ICO", "TXT", "DOCX"],
+    "jpg": ["PNG", "WEBP", "PDF", "ICO", "TXT", "DOCX"],
+    "jpeg": ["PNG", "WEBP", "PDF", "ICO", "TXT", "DOCX"],
+    "webp": ["PNG", "JPG", "PDF", "ICO", "TXT", "DOCX"],
+    "bmp": ["PNG", "JPG", "WEBP", "PDF", "TXT", "DOCX"],
     "gif": ["PNG", "JPG", "WEBP", "MP4", "PDF"],
-    "tiff": ["PNG", "JPG", "WEBP", "PDF"],
+    "tiff": ["PNG", "JPG", "WEBP", "PDF", "TXT", "DOCX"],
     "ico": ["PNG", "JPG", "WEBP"],
-    # Documents & Text
-    "pdf": ["DOCX", "TXT", "MD", "HTML", "PNG"],
+    "heic": ["JPG", "PNG", "WEBP", "PDF", "TXT", "DOCX"],
+    "heif": ["JPG", "PNG", "WEBP", "PDF", "TXT", "DOCX"],
+    "avif": ["PNG", "JPG", "WEBP", "PDF", "TXT", "DOCX"],
+    "svg": ["PNG", "PDF", "JPG", "WEBP", "ICO"],
+    # PDF (Layout DOCX, Excel/CSV Table Extraction, HTML, PNG, OCR TXT)
+    "pdf": ["DOCX", "XLSX", "CSV", "TXT", "HTML", "PNG"],
+    # Office & Markup Documents
     "docx": ["PDF", "TXT", "MD", "HTML"],
     "txt": ["PDF", "DOCX", "MD", "HTML"],
     "md": ["PDF", "DOCX", "HTML", "TXT"],
     "html": ["PDF", "DOCX", "MD", "TXT"],
+    # E-Books & Comic Archives
+    "epub": ["PDF", "DOCX", "TXT", "HTML", "PNG"],
+    "fb2": ["PDF", "DOCX", "TXT", "HTML", "PNG"],
+    "xps": ["PDF", "DOCX", "TXT", "HTML", "PNG"],
+    "cbz": ["PDF", "PNG"],
+    # Developer Data & Spreadsheets
+    "json": ["XLSX", "CSV", "YAML", "TOML", "XML"],
+    "yaml": ["JSON", "TOML", "XLSX", "CSV", "XML"],
+    "yml": ["JSON", "TOML", "XLSX", "CSV", "XML"],
+    "toml": ["JSON", "YAML", "XLSX", "CSV", "XML"],
+    "xml": ["JSON", "YAML", "XLSX", "CSV"],
+    "csv": ["XLSX", "JSON", "YAML", "XML"],
+    "xlsx": ["CSV", "JSON", "YAML", "XML"],
     # Video
     "mp4": ["WEBM", "MKV", "MP3", "WAV", "GIF"],
     "mkv": ["MP4", "WEBM", "MP3", "WAV", "GIF"],

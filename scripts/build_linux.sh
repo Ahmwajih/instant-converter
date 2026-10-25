@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.1"
+VERSION="1.1.0"
 APP_NAME="instant-converter"
 ARCH="amd64"
 
@@ -22,6 +22,12 @@ pyinstaller --noconfirm --clean \
     --onedir \
     --icon "assets/icon.png" \
     --add-data "assets:assets" \
+    --collect-all pymupdf \
+    --collect-all pdf2docx \
+    --collect-all docx \
+    --collect-all openpyxl \
+    --collect-all pillow_heif \
+    --collect-all rapidocr_onnxruntime \
     app.py
 
 echo "==> Building Debian package (${APP_NAME}_${VERSION}_${ARCH}.deb)..."
@@ -48,10 +54,10 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: Instant Converter Contributors <opensource@example.com>
 Depends: libegl1, libgl1, libxkbcommon-x11-0, libxcb-cursor0
-Recommends: libreoffice-writer, ffmpeg, poppler-utils
-Description: Floating radial menu offline file converter
- Cross-platform local file converter for images, PDFs, DOCX, TXT, and media
- files featuring a fast floating radial menu.
+Recommends: libreoffice-writer, ffmpeg, tesseract-ocr
+Description: Floating radial menu offline file converter with OCR and Table Extraction
+ Cross-platform local file converter for images, HEIC/SVG, PDFs, Excel tables,
+ E-Books, JSON/YAML/TOML, DOCX, and media with offline OCR.
 CONTROL
 
 cat <<DESKTOP > "${DEB_ROOT}/usr/share/applications/${APP_NAME}.desktop"

@@ -385,15 +385,18 @@ class FloatingDropOrb(QWidget):
             self,
             "Select File to Convert",
             str(Path.home()),
-            "All Supported (*.png *.jpg *.jpeg *.webp *.bmp *.ico *.tiff *.gif "
-            "*.pdf *.docx *.txt *.md *.html "
+            "All Supported (*.png *.jpg *.jpeg *.webp *.bmp *.ico *.tiff *.gif *.heic *.heif *.avif *.svg "
+            "*.pdf *.docx *.txt *.md *.html *.epub *.fb2 *.xps *.cbz "
+            "*.json *.yaml *.yml *.toml *.xml *.csv *.xlsx "
             "*.mp4 *.mkv *.webm *.avi *.mov *.mp3 *.wav *.flac *.ogg *.m4a);;"
-            "Images (*.png *.jpg *.jpeg *.webp *.bmp *.ico *.tiff *.gif);;"
-            "Documents (*.pdf *.docx *.txt *.md *.html);;"
+            "Images & Next-Gen (*.png *.jpg *.jpeg *.webp *.bmp *.ico *.tiff *.gif *.heic *.heif *.avif *.svg);;"
+            "Documents & E-Books (*.pdf *.docx *.txt *.md *.html *.epub *.fb2 *.xps *.cbz);;"
+            "Spreadsheets & Data (*.xlsx *.csv *.json *.yaml *.yml *.toml *.xml);;"
             "Video & Audio (*.mp4 *.mkv *.webm *.avi *.mov *.mp3 *.wav *.flac *.ogg *.m4a)",
         )
         if file_str:
             self.load_file(Path(file_str))
+
     def load_file(self, file_path: Path) -> None:
         if not file_path.is_file():
             self._status_text = "Error: Not a valid file"

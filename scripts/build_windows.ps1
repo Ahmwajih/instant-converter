@@ -17,6 +17,12 @@ pyinstaller --noconfirm --clean `
     --onedir `
     --icon "assets\icon.ico" `
     --add-data "assets;assets" `
+    --collect-all pymupdf `
+    --collect-all pdf2docx `
+    --collect-all docx `
+    --collect-all openpyxl `
+    --collect-all pillow_heif `
+    --collect-all rapidocr_onnxruntime `
     app.py
 
 Write-Host "==> Checking for Inno Setup Compiler (ISCC)..."
