@@ -1,5 +1,8 @@
 import csv
 import json
+import shutil
+import subprocess
+import tempfile
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -8,6 +11,7 @@ import openpyxl
 from openpyxl.styles import Font
 import tomli_w
 import yaml
+from converter.documents import _render_vector_pdf
 
 
 def _load_structured_data(source_path: Path) -> Any:
@@ -22,29 +26,33 @@ def _load_structured_data(source_path: Path) -> Any:
     if ext == "toml":
         return tomllib.loads(source_path.read_text(encoding="utf-8"))
 
-    if ext == "csv":
+    if ext in {"csv", "tsv"}:
+        delim = "\t" if ext == "tsv" else ","
         with source_path.open("r", encoding="utf-8", errors="replace", newline="") as f:
-            reader = csv.DictReader(f)
+            reader = csv.DictReader(f, delimiter=delim)
             return list(reader)
 
-    if ext == "xlsx":
-        wb = openpyxl.load_workbook(source_path, data_only=True)
+    if ext in {"xlsx", "xls", "ods"}:
+        actual_xlsx = source_path
+        if ext in {"xls", "ods"}:
+            soffice = shutil.which("libreoffice") or shutil.which("soffice")
+            if not soffice:
+                raise RuntimeError(f"LibreOffice is required to read .{ext} spreadsheets.")
+            tmpdir = tempfile.mkdtemp()
+            cmd = [soffice, "--headless", "--convert-to", "xlsx", "--outdir", tmpdir, str(source_path)]
+            subprocess.run(cmd, capture_output=True, timeout=60)
+            actual_xlsx = Path(tmpdir) / f"{source_path.stem}.xlsx"
+
+        wb = openpyxl.load_workbook(actual_xlsx, data_only=True)
         ws = wb.active
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
             return []
-        headers = [
-            str(h) if h is not None else f"col_{i}" for i, h in enumerate(rows[0])
-        ]
+        headers = [str(h) if h is not None else f"col_{i}" for i, h in enumerate(rows[0])]
         records = []
         for row in rows[1:]:
             if any(cell is not None for cell in row):
-                records.append(
-                    {
-                        headers[i]: (row[i] if i < len(row) else None)
-                        for i in range(len(headers))
-                    }
-                )
+                records.append({headers[i]: (row[i] if i < len(row) else None) for i in range(len(headers))})
         return records
 
     if ext == "xml":
@@ -78,20 +86,32 @@ def _normalize_to_rows(data: Any) -> list[dict[str, Any]]:
 
 def convert_data(source_path: Path, output_path: Path, target_format: str) -> Path:
     tgt = target_format.lower().lstrip(".")
+    src_ext = source_path.suffix.lower().lstrip(".")
+
+    # Direct LibreOffice Calc export for ODS / PDF when LibreOffice is installed
+    if tgt in {"ods", "pdf"} and src_ext in {"xlsx", "xls", "ods", "csv", "tsv"}:
+        soffice = shutil.which("libreoffice") or shutil.which("soffice")
+        if soffice:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                profile_uri = Path(tmpdir).as_uri() + "/lo_profile"
+                cmd = [
+                    soffice, f"-env:UserInstallation={profile_uri}",
+                    "--headless", "--convert-to", tgt, "--outdir", tmpdir, str(source_path)
+                ]
+                subprocess.run(cmd, capture_output=True, timeout=60)
+                gen = Path(tmpdir) / f"{source_path.stem}.{tgt}"
+                if gen.exists():
+                    shutil.move(str(gen), str(output_path))
+                    return output_path
+
     data = _load_structured_data(source_path)
 
     if tgt == "json":
-        output_path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False, default=str),
-            encoding="utf-8",
-        )
+        output_path.write_text(json.dumps(data, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
         return output_path
 
     if tgt in {"yaml", "yml"}:
-        output_path.write_text(
-            yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
-            encoding="utf-8",
-        )
+        output_path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         return output_path
 
     if tgt == "toml":
@@ -100,7 +120,8 @@ def convert_data(source_path: Path, output_path: Path, target_format: str) -> Pa
         output_path.write_text(tomli_w.dumps(clean_payload), encoding="utf-8")
         return output_path
 
-    if tgt == "csv":
+    if tgt in {"csv", "tsv"}:
+        delim = "\t" if tgt == "tsv" else ","
         rows = _normalize_to_rows(data)
         headers: list[str] = []
         for r in rows:
@@ -109,7 +130,7 @@ def convert_data(source_path: Path, output_path: Path, target_format: str) -> Pa
                     headers.append(str(k))
         with output_path.open("w", encoding="utf-8", newline="") as f:
             if headers:
-                writer = csv.DictWriter(f, fieldnames=headers)
+                writer = csv.DictWriter(f, fieldnames=headers, delimiter=delim)
                 writer.writeheader()
                 for r in rows:
                     writer.writerow({str(k): v for k, v in r.items()})
@@ -122,20 +143,22 @@ def convert_data(source_path: Path, output_path: Path, target_format: str) -> Pa
             for k in r.keys():
                 if str(k) not in headers:
                     headers.append(str(k))
-
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Data"
-
         if headers:
             ws.append(headers)
             for cell in ws[1]:
                 cell.font = Font(bold=True)
             for r in rows:
                 ws.append([r.get(h, "") for h in headers])
-
         wb.save(output_path)
         return output_path
+
+    if tgt == "pdf":
+        rows = _normalize_to_rows(data)
+        lines = [" | ".join(f"{k}: {v}" for k, v in r.items()) for r in rows]
+        return _render_vector_pdf("\n".join(lines), output_path)
 
     if tgt == "xml":
         rows = _normalize_to_rows(data)
@@ -149,8 +172,7 @@ def convert_data(source_path: Path, output_path: Path, target_format: str) -> Pa
                 sub = ET.SubElement(item_el, tag_name)
                 sub.text = "" if v is None else str(v)
         ET.indent(root, space="  ")
-        tree = ET.ElementTree(root)
-        tree.write(output_path, encoding="utf-8", xml_declaration=True)
+        ET.ElementTree(root).write(output_path, encoding="utf-8", xml_declaration=True)
         return output_path
 
     raise ValueError(f"Unsupported data target format: {target_format}")

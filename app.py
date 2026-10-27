@@ -2,6 +2,9 @@ import os
 import sys
 from pathlib import Path
 
+if "LD_LIBRARY_PATH_ORIG" not in os.environ:
+    os.environ["LD_LIBRARY_PATH_ORIG"] = os.environ.get("LD_LIBRARY_PATH", "")
+
 if sys.platform.startswith("linux") and "DISPLAY" in os.environ:
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
@@ -21,16 +24,16 @@ def main() -> int:
     app.setOrganizationName("InstantConverter")
     app.setDesktopFileName("instant-converter")
     app.setWindowIcon(create_app_icon())
-    # Prevent QFileDialog closing from terminating the application
     app.setQuitOnLastWindowClosed(False)
 
-    initial_file = None
-    if len(sys.argv) > 1:
-        candidate = Path(sys.argv[1]).expanduser().resolve()
+    # Support multiple files passed via OS Right-Click ("Send to Instant Converter") or CLI
+    initial_files: list[Path] = []
+    for arg in sys.argv[1:]:
+        candidate = Path(arg).expanduser().resolve()
         if candidate.is_file():
-            initial_file = candidate
+            initial_files.append(candidate)
 
-    orb = FloatingDropOrb(initial_file=initial_file)
+    orb = FloatingDropOrb(initial_files=initial_files)
     orb.show()
 
     return app.exec()

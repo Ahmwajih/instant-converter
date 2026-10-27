@@ -248,3 +248,22 @@ def merge_pdfs(source_paths: Sequence[Path], output_path: Path) -> Path:
     with output_path.open("wb") as f_out:
         writer.write(f_out)
     return output_path
+
+
+def pdf_to_svg(source_path: Path, output_path: Path) -> Path:
+    """Exports PDF page(s) to scalable vector SVG using PyMuPDF."""
+    with pymupdf.open(str(source_path)) as doc:
+        if len(doc) == 0:
+            raise ValueError("Cannot export an empty PDF to SVG.")
+        if len(doc) == 1:
+            output_path.write_text(doc[0].get_svg_image(), encoding="utf-8")
+            return output_path
+        out_dir = source_path.parent / f"{source_path.stem}_SVG_Pages"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        first_svg = None
+        for idx, page in enumerate(doc, start=1):
+            svg_file = out_dir / f"{source_path.stem}_page_{idx:03d}.svg"
+            svg_file.write_text(page.get_svg_image(), encoding="utf-8")
+            if first_svg is None:
+                first_svg = svg_file
+        return first_svg or output_path

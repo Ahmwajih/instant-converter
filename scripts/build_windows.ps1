@@ -10,7 +10,7 @@ python scripts/generate_icons.py
 Write-Host "==> Running automated test suite..."
 pytest
 
-Write-Host "==> Building standalone Windows executable with PyInstaller..."
+Write-Host "==> Building slimmed standalone Windows executable with PyInstaller..."
 pyinstaller --noconfirm --clean `
     --name "InstantConverter" `
     --windowed `
@@ -20,9 +20,17 @@ pyinstaller --noconfirm --clean `
     --collect-all pymupdf `
     --collect-all pdf2docx `
     --collect-all docx `
+    --collect-all pptx `
     --collect-all openpyxl `
     --collect-all pillow_heif `
     --collect-all rapidocr_onnxruntime `
+    --exclude-module PySide6.QtWebEngineCore `
+    --exclude-module PySide6.QtWebEngineWidgets `
+    --exclude-module PySide6.QtQuick `
+    --exclude-module PySide6.QtQml `
+    --exclude-module PySide6.Qt3DCore `
+    --exclude-module PySide6.QtPdf `
+    --exclude-module tkinter `
     app.py
 
 Write-Host "==> Checking for Inno Setup Compiler (ISCC)..."

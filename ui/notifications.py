@@ -1,3 +1,6 @@
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, QPointF, QRectF, QUrl
@@ -13,6 +16,35 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QSystemTrayIcon
 
+_PYINSTALLER_POLLUTED_VARS = (
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "QT_PLUGIN_PATH",
+    "QML2_IMPORT_PATH",
+    "QT_QPA_PLATFORM_PLUGIN_PATH",
+    "GIO_MODULE_DIR",
+    "GIO_EXTRA_MODULES",
+    "GSETTINGS_SCHEMA_DIR",
+    "GTK_PATH",
+    "GTK_EXE_PREFIX",
+    "GTK_DATA_PREFIX",
+    "GDK_PIXBUF_MODULE_FILE",
+    "GDK_PIXBUF_MODULEDIR",
+    "PYTHONPATH",
+    "PYTHONHOME",
+)
+
+
+def get_clean_env() -> dict[str, str]:
+    """Removes all PyInstaller bundle environment variables so OS file managers never lag."""
+    env = os.environ.copy()
+    for var in _PYINSTALLER_POLLUTED_VARS:
+        env.pop(var, None)
+    orig_ld = env.pop("LD_LIBRARY_PATH_ORIG", "")
+    if orig_ld:
+        env["LD_LIBRARY_PATH"] = orig_ld
+    return env
+
 
 def _resolve_asset_icon() -> Path | None:
     base_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
@@ -25,7 +57,6 @@ def create_app_icon() -> QIcon:
     if asset_png is not None:
         return QIcon(str(asset_png))
 
-    # Fallback programmatic QPainter radial converter icon
     size = 128
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
@@ -33,12 +64,10 @@ def create_app_icon() -> QIcon:
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    # Outer badge
     painter.setBrush(QColor(24, 24, 27))
     painter.setPen(QPen(QColor(63, 63, 70), 3))
     painter.drawEllipse(4, 4, size - 8, size - 8)
 
-    # 4 Radial slices
     slice_rect = QRectF(12, 12, size - 24, size - 24)
     colors = [
         (8, 74, QColor(59, 130, 246)),
@@ -55,12 +84,10 @@ def create_app_icon() -> QIcon:
         painter.setBrush(color)
         painter.drawPath(path)
 
-    # Inner hub
     painter.setBrush(QColor(24, 24, 27))
     painter.setPen(QPen(QColor(96, 165, 250), 2.5))
     painter.drawEllipse(36, 36, size - 72, size - 72)
 
-    # Conversion arrows in center
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QColor(255, 255, 255))
     painter.drawRoundedRect(QRectF(48, 54, 24, 6), 2, 2)
@@ -73,8 +100,44 @@ def create_app_icon() -> QIcon:
 
 
 def reveal_in_file_manager(file_path: Path) -> None:
-    folder = file_path.parent if file_path.is_file() else file_path
-    QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder.resolve())))
+    """Opens the system file manager and selects the file in a detached, unpolluted session."""
+    target = file_path.resolve()
+    folder = target.parent if target.exists() and target.is_file() else target
+    env = get_clean_env()
+
+    try:
+        if sys.platform.startswith("win"):
+            if target.exists() and target.is_file():
+                subprocess.Popen(["explorer.exe", f"/select,{target}"], env=env)
+            else:
+                subprocess.Popen(["explorer.exe", str(folder)], env=env)
+            return
+
+        if sys.platform.startswith("linux"):
+            if shutil.which("nautilus") and target.exists() and target.is_file():
+                subprocess.Popen(
+                    ["nautilus", "--select", str(target)],
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                return
+            if shutil.which("xdg-open"):
+                subprocess.Popen(
+                    ["xdg-open", str(folder)],
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                return
+    except Exception:
+        pass
+
+    QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
 
 class NotificationManager:

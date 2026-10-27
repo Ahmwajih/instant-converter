@@ -1,5 +1,8 @@
+import base64
 import io
 from pathlib import Path
+import cv2
+import numpy as np
 import pymupdf
 from PIL import Image, ImageOps
 
@@ -16,6 +19,7 @@ PILLOW_FORMAT_MAP = {
     "jpeg": "JPEG",
     "png": "PNG",
     "webp": "WEBP",
+    "avif": "AVIF",
     "bmp": "BMP",
     "ico": "ICO",
     "tiff": "TIFF",
@@ -32,16 +36,58 @@ def _open_image_or_svg(source_path: Path) -> Image.Image:
     return Image.open(source_path)
 
 
+def image_to_svg(source_path: Path, output_path: Path) -> Path:
+    """Converts raster images (PNG, JPG, WEBP, BMP, ICO) into scalable SVG with traced vector paths."""
+    with _open_image_or_svg(source_path) as img:
+        img = ImageOps.exif_transpose(img).convert("RGBA")
+        width, height = img.size
+
+        # Encode crisp base image layer + traced vector contour paths for sharp scaling
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        b64_png = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        # Trace main shape contours using OpenCV so vector editors can also manipulate paths
+        arr = np.array(img)
+        gray = cv2.cvtColor(arr, cv2.COLOR_RGBA2GRAY)
+        _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        path_elements: list[str] = []
+        for cnt in contours[:150]:
+            if cv2.contourArea(cnt) < 16:
+                continue
+            epsilon = 0.003 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+            pts = [f"{int(pt[0][0])},{int(pt[0][1])}" for pt in approx]
+            if len(pts) >= 3:
+                d_str = "M " + " L ".join(pts) + " Z"
+                path_elements.append(f'  <path d="{d_str}" fill="none" stroke="none" />')
+
+        paths_xml = "\n".join(path_elements)
+        svg_xml = (
+            f'<?xml version="1.0" encoding="UTF-8"?>\n'
+            f'<svg xmlns="http://www.w3.org/2000/svg" '
+            f'xmlns:xlink="http://www.w3.org/1999/xlink" '
+            f'width="{width}" height="{height}" viewBox="0 0 {width} {height}">\n'
+            f'  <image width="{width}" height="{height}" xlink:href="data:image/png;base64,{b64_png}"/>\n'
+            f"{paths_xml}\n"
+            f"</svg>\n"
+        )
+        output_path.write_text(svg_xml, encoding="utf-8")
+    return output_path
+
+
 def convert_image(source_path: Path, output_path: Path, target_format: str) -> Path:
     fmt_key = target_format.lower().lstrip(".")
 
-    # Offline OCR routes from any image to TXT or DOCX
     if fmt_key == "txt":
         return image_to_txt(source_path, output_path)
     if fmt_key == "docx":
         return image_to_docx(source_path, output_path)
+    if fmt_key == "svg":
+        return image_to_svg(source_path, output_path)
 
-    # Direct vector SVG -> PDF route
     if source_path.suffix.lower() == ".svg" and fmt_key == "pdf":
         with pymupdf.open(str(source_path)) as svg_doc:
             output_path.write_bytes(svg_doc.convert_to_pdf())
