@@ -18,6 +18,11 @@ from converter.data_formats import convert_data
 from converter.documents import convert_document
 from converter.ebooks import convert_ebook
 from converter.images import convert_image
+from converter.markdown_engine import (
+    pdf_to_markdown,
+    pptx_to_markdown,
+    spreadsheet_to_markdown,
+)
 from converter.media import convert_media
 from converter.pdf import (
     pdf_to_csv,
@@ -105,6 +110,29 @@ def convert_file(
 
     final_output = output_path or resolve_output_path(source_path, tgt_ext)
 
+    # High-Precision Markdown Routing for All Formats
+    if tgt_ext == "md":
+        if src_ext == "pdf":
+            return pdf_to_markdown(source_path, final_output)
+        if src_ext == "pptx":
+            return pptx_to_markdown(source_path, final_output)
+        if src_ext in DATA_FORMATS:
+            return spreadsheet_to_markdown(source_path, final_output)
+        if src_ext in DOCUMENT_FORMATS:
+            return convert_document(source_path, final_output, "md")
+        if src_ext in IMAGE_FORMATS:
+            with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as tmp:
+                tmp_txt = Path(tmp.name)
+            convert_image(source_path, tmp_txt, "txt")
+            ocr_body = tmp_txt.read_text(encoding="utf-8", errors="replace").strip()
+            tmp_txt.unlink(missing_ok=True)
+            final_output.write_text(f"# {source_path.stem}\n\n{ocr_body}\n", encoding="utf-8")
+            return final_output
+        if src_ext in SUBTITLE_FORMATS:
+            return convert_subtitles(source_path, final_output, "txt")
+        if src_ext in EBOOK_FORMATS:
+            return convert_ebook(source_path, final_output, "md")
+
     if src_ext in SUBTITLE_FORMATS:
         return convert_subtitles(source_path, final_output, tgt_ext)
 
@@ -137,7 +165,7 @@ def convert_file(
         return convert_image(source_path, final_output, tgt_ext)
 
     if src_ext == "pdf":
-        if tgt_ext in {"txt", "md"}:
+        if tgt_ext == "txt":
             return pdf_to_txt(source_path, final_output)
         if tgt_ext == "docx":
             return pdf_to_docx(source_path, final_output)
